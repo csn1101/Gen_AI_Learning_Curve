@@ -1,6 +1,9 @@
-pandas
-numpy
-openai
-nltk
-spacy
-python-dotenv
+# pandas
+# numpy
+# openai
+# nltk
+# spacy
+# python-dotenv
+sentencepiece
+torch
+transformers
