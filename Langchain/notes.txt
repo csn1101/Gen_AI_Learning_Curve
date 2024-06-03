@@ -1,0 +1,110 @@
+import fitz  # PyMuPDF
+from transformers import MarianMTModel, MarianTokenizer
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import letter
+import io
+
+# Extract text and formatting from the PDF
+def extract_text_and_formatting(pdf_path):
+    document = fitz.open(pdf_path)
+    pages = []
+    for page_num in range(len(document)):
+        page = document.load_page(page_num)
+        blocks = page.get_text("dict")["blocks"]
+        page_content = []
+        for block in blocks:
+            if block["type"] == 0:  # text block
+                for line in block["lines"]:
+                    for span in line["spans"]:
+                        page_content.append({
+                            "text": span["text"],
+                            "size": span["size"],
+                            "flags": span["flags"],
+                            "font": span["font"],
+                            "color": span["color"],
+                            "bbox": span["bbox"]
+                        })
+        pages.append(page_content)
+    return pages
+
+# Translate text using MarianMT
+def translate_text(text, target_language):
+    model_name = f"Helsinki-NLP/opus-mt-en-{target_language}"
+    tokenizer = MarianTokenizer.from_pretrained(model_name)
+    model = MarianMTModel.from_pretrained(model_name)
+    
+    translated_text = []
+    for t in text:
+        if t.strip():  # Avoid empty strings
+            batch = tokenizer(t, return_tensors="pt", truncation=True, padding="max_length", max_length=512)
+            gen = model.generate(**batch)
+            translated = tokenizer.batch_decode(gen, skip_special_tokens=True)[0]
+            translated_text.append(translated)
+        else:
+            translated_text.append(t)
+    return translated_text
+
+# Create a translated PDF with the same formatting
+def create_translated_pdf(pages, translated_pages, output_pdf_path):
+    packet = io.BytesIO()
+    can = canvas.Canvas(packet, pagesize=letter)
+    width, height = letter
+
+    for page_num, page_content in enumerate(translated_pages):
+        for span in page_content:
+            x0, y0, x1, y1 = span["bbox"]
+            y = height - y0  # Convert to PDF coordinate system
+            # Map the font to a standard font
+            font_name = span["font"]
+            if 'Bold' in font_name:
+                can.setFont("Helvetica-Bold", span["size"])
+            elif 'Italic' in font_name or 'Oblique' in font_name:
+                can.setFont("Helvetica-Oblique", span["size"])
+            else:
+                can.setFont("Helvetica", span["size"])
+            
+            r, g, b = span["color"] if isinstance(span["color"], tuple) else (0, 0, 0)
+            can.setFillColorRGB(r / 255, g / 255, b / 255)
+            can.drawString(x0, y, span["text"])
+        can.showPage()
+
+    can.save()
+
+    # Move to the beginning of the StringIO buffer
+    packet.seek(0)
+    new_pdf = fitz.open("pdf", packet)
+    output = fitz.open()
+
+    for i in range(len(new_pdf)):
+        page = output.new_page(width=letter[0], height=letter[1])
+        overlay = new_pdf.load_page(i)
+        page.show_pdf_page(page.rect, overlay)
+
+    output.save(output_pdf_path)
+
+# Paths
+pdf_path = r"D:\DS WorkFlow\Github\Gen_AI\Langchain\data\smallpdf.pdf"
+output_pdf_path = r"D:\DS WorkFlow\Github\Gen_AI\Langchain\data\translated_pdf.pdf"
+target_language = "fr"  # e.g., French
+
+# Execute the process
+extracted_pages = extract_text_and_formatting(pdf_path)
+all_text = [span["text"] for page in extracted_pages for span in page]
+translated_text = translate_text(all_text, target_language)
+
+# Reconstruct the translated pages
+translated_pages = []
+text_index = 0
+for page in extracted_pages:
+    translated_page = []
+    for span in page:
+        translated_span = span.copy()
+        translated_span["text"] = translated_text[text_index]
+        translated_page.append(translated_span)
+        text_index += 1
+    translated_pages.append(translated_page)
+
+# Create the translated PDF
+create_translated_pdf(extracted_pages, translated_pages, output_pdf_path)
+
+print(f"Translated PDF saved at: {output_pdf_path}")

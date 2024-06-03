@@ -16,4 +16,17 @@ platformdirs
 # >=3.10.0
 langchain_text_splitters
 # ==0.0.1
+pymupdf
+transformers
+reportlab
+datasets 
+sentencepiece
+torch
+sacremoses
+deepl
+deep_translator
+googletrans
+tiktoken
+
+
 
