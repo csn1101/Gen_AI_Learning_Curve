@@ -27,6 +27,9 @@ deepl
 deep_translator
 googletrans
 tiktoken
+python-dotenv
+openai
+langchain-openai
 
 
 
